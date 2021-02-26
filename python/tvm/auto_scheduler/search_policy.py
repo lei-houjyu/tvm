@@ -113,6 +113,21 @@ class EmptyPolicy(SearchPolicy):
     def __init__(self, task, init_search_callbacks=None):
         self.__init_handle_by_constructor__(_ffi_api.EmptyPolicy, task, init_search_callbacks)
 
+@tvm._ffi.register_object("auto_scheduler.TilePolicy")
+class TilePolicy(SearchPolicy):
+    """A simple example of the search policy which always returns
+    the initial naive schedule (state).
+
+    Parameters
+    ----------
+    task : SearchTask
+        The SearchTask for the computation declaration.
+    init_search_callbacks : Optional[List[SearchCallback]]
+        Callback functions called before the search process.
+    """
+
+    def __init__(self, task, init_search_callbacks=None):
+        self.__init_handle_by_constructor__(_ffi_api.TilePolicy, task, init_search_callbacks)
 
 @tvm._ffi.register_object("auto_scheduler.SketchPolicy")
 class SketchPolicy(SearchPolicy):

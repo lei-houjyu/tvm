@@ -50,6 +50,6 @@ from .relay_integration import (
     is_auto_scheduler_enabled,
 )
 from .search_task import SearchTask, TuningOptions, HardwareParams, create_task, auto_schedule
-from .search_policy import EmptyPolicy, SketchPolicy, PreloadMeasuredStates
+from .search_policy import EmptyPolicy, SketchPolicy, TilePolicy, PreloadMeasuredStates
 from .task_scheduler import TaskScheduler
 from .workload_registry import register_workload, make_workload_key
