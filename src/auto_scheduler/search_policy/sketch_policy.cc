@@ -142,6 +142,17 @@ SketchPolicy::SketchPolicy(SearchTask task, CostModel program_cost_model,
 
 State SketchPolicyNode::Search(int n_trials, int early_stopping, int num_measure_per_iter,
                                ProgramMeasurer measurer) {
+  printf("init_state has %ld stages\n", search_task->compute_dag->init_state->stages.size());
+  Array<Stage> stages = search_task->compute_dag->init_state->stages;                    
+  for (size_t i = 0; i < stages.size(); i++) {
+    Stage cur_stage = stages[i];
+    printf("stage %ld, name: %s compute_at: %d\n",
+            i, cur_stage->op->name.c_str(), (int)cur_stage->compute_at);
+    for (size_t j = 0; j < cur_stage->iters.size(); j++) {
+      Iterator cur_iter = cur_stage->iters[j];
+      printf("iterator %ld, name: %s\n", j, cur_iter->name.c_str());
+    }
+  }                              
   num_measure_per_iter_ = num_measure_per_iter;
 
   if (n_trials <= 1) {

@@ -122,12 +122,40 @@ class TilePolicy(SearchPolicy):
     ----------
     task : SearchTask
         The SearchTask for the computation declaration.
+    params : Optional[Dict[str, Any]]
+        Parameters of the search policy.
+        See `src/auto_scheduler/search_policy/tile_search_policy.h` for the definitions.
+        See `DEFAULT_PARAMS` below to find the default values.    
     init_search_callbacks : Optional[List[SearchCallback]]
         Callback functions called before the search process.
     """
 
-    def __init__(self, task, init_search_callbacks=None):
-        self.__init_handle_by_constructor__(_ffi_api.TilePolicy, task, init_search_callbacks)
+    DEFAULT_PARAMS = {
+        "eps_greedy": 0.05,
+        "retry_search_one_round_on_empty": 1,
+        "sample_init_min_population": 50,
+        "sample_init_use_measured_ratio": 0.2,
+        "evolutionary_search_population": 2048,
+        "evolutionary_search_num_iters": 4,
+        "evolutionary_search_mutation_prob": 0.85,
+        "cpu_multi_level_tiling_structure": "SSRSRS",
+        "gpu_multi_level_tiling_structure": "SSSRRSRS",
+        # Notice: the default thread bind policy of GPU assumes the tiling structure to have at
+        # least 3 spatial tiling levels in outermost
+        "max_innermost_split_factor": 64,
+        "max_vectorize_size": 16,
+        "disable_change_compute_location": 0,
+    }
+
+    def __init__(self, task, params=None, init_search_callbacks=None):
+        if params is None:
+            params = TilePolicy.DEFAULT_PARAMS
+        else:
+            for key, value in TilePolicy.DEFAULT_PARAMS.items():
+                if key not in params:
+                    params[key] = value
+
+        self.__init_handle_by_constructor__(_ffi_api.TilePolicy, task, params, init_search_callbacks)
 
 @tvm._ffi.register_object("auto_scheduler.SketchPolicy")
 class SketchPolicy(SearchPolicy):

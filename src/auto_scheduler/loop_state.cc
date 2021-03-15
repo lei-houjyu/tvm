@@ -571,5 +571,44 @@ TVM_REGISTER_GLOBAL("auto_scheduler.StateEqual").set_body_typed([](State state1,
   return std::equal_to<State>()(state1, state2);
 });
 
+std::string StateNode::PrintStep() const{
+  std::string s = "";
+  for (Step step : transform_steps) {
+    s += std::to_string(step->stage_id);
+    if (auto ps = step.as<AnnotationStepNode>()) {
+      s += "\tAnnotationStepNode\n";
+    } else if (auto ps = step.as<FuseStepNode>()) {
+      s += "\tFuseStepNode\n";
+    } else if (auto ps = step.as<PragmaStepNode>()) {
+      s += "\tPragmaStepNode\n";
+    } else if (auto ps = step.as<ReorderStepNode>()) {
+      s += "\tReorderStepNode\n";
+    } else if (auto ps = step.as<SplitStepNode>()) {
+      s += "\tSplitStepNode\n";
+    } else if (auto ps = step.as<FollowSplitStepNode>()) {
+      s += "\tFollowSplitStepNode\n";
+    } else if (auto ps = step.as<FollowFusedSplitStepNode>()) {
+      s += "\tFollowFusedSplitStepNode\n";
+    } else if (auto ps = step.as<StorageAlignStepNode>()) {
+      s += "\tStorageAlignStepNode\n";
+    } else if (auto ps = step.as<ComputeAtStepNode>()) {
+      s += "\tComputeAtStepNode\n";
+    } else if (auto ps = step.as<ComputeInlineStepNode>()) {
+      s += "\tComputeInlineStepNode\n";
+    } else if (auto ps = step.as<ComputeRootStepNode>()) {
+      s += "\tComputeRootStepNode\n";
+    } else if (auto ps = step.as<CacheReadStepNode>()) {
+      s += "\tCacheReadStepNode\n";
+    } else if (auto ps = step.as<CacheWriteStepNode>()) {
+      s += "\tCacheWriteStepNode\n";
+    } else if (auto ps = step.as<RfactorStepNode>()) {
+      s += "\tRfactorStepNode\n";
+    } else {
+      LOG(FATAL) << "Invalid Step: " << step;
+    }
+  }
+  return s;
+}
+
 }  // namespace auto_scheduler
 }  // namespace tvm

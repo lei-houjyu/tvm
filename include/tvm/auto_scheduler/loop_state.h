@@ -264,6 +264,7 @@ class StateNode : public Object {
 
   static constexpr const char* _type_key = "auto_scheduler.State";
   TVM_DECLARE_FINAL_OBJECT_INFO(StateNode, Object);
+  std::string PrintStep() const;
 };
 
 /*!

@@ -50,6 +50,7 @@ SketchGenerationRule::ConditionKind RuleSkipStage::MeetCondition(const SketchPol
 
 std::vector<std::pair<State, int>> RuleSkipStage::Apply(const SketchPolicyNode& policy,
                                                         const State& state, int stage_id) const {
+  std::cout << "[RuleSkipStage] Apply at stage " << stage_id << "\n";
   return {std::make_pair(state, stage_id - 1)};
 }
 
@@ -84,6 +85,7 @@ SketchGenerationRule::ConditionKind RuleAlwaysInline::MeetCondition(const Sketch
 
 std::vector<std::pair<State, int>> RuleAlwaysInline::Apply(const SketchPolicyNode& policy,
                                                            const State& state, int stage_id) const {
+  std::cout << "[RuleAlwaysInline] Apply at stage " << stage_id << "\n";
   State tmp_s = state;
   tmp_s.compute_inline(stage_id);
   return {std::make_pair(std::move(tmp_s), stage_id - 1)};
@@ -101,6 +103,7 @@ SketchGenerationRule::ConditionKind RuleMultiLevelTiling::MeetCondition(
 std::vector<std::pair<State, int>> RuleMultiLevelTiling::Apply(const SketchPolicyNode& policy,
                                                                const State& state,
                                                                int stage_id) const {
+  std::cout << "[RuleMultiLevelTiling] Apply at stage " << stage_id << "\n";
   const std::string& multi_level_tiling_structure =
       IsGPUTask(policy.search_task)
           ? GetStringParam(policy.params, SketchParamKey::MultiLevelTiling::gpu_structure)
@@ -125,6 +128,7 @@ SketchGenerationRule::ConditionKind RuleMultiLevelTilingWithFusion::MeetConditio
 
 std::vector<std::pair<State, int>> RuleMultiLevelTilingWithFusion::Apply(
     const SketchPolicyNode& policy, const State& state, int stage_id) const {
+  std::cout << "[RuleMultiLevelTilingWithFusion] Apply at stage " << stage_id << "\n";
   int target_stage_id;
   ICHECK(
       HasSingleElementwiseMatchedConsumer(policy.search_task, state, stage_id, &target_stage_id));
@@ -140,13 +144,17 @@ std::vector<std::pair<State, int>> RuleMultiLevelTilingWithFusion::Apply(
   std::vector<int> follow_tiling_levels =
       IsGPUTask(policy.search_task) ? std::vector<int>{3} : std::vector<int>{1, 2};
   for (int level : follow_tiling_levels) {
+    std::cout << "[RuleMultiLevelTilingWithFusion] level " << level << "\n";
     if (tolower(multi_level_tiling_structure[level - 1]) != 's') {
       continue;
     }
     State tmp_s = base_state;
+    std::cout << "[RuleMultiLevelTilingWithFusion] target_stage_id " << target_stage_id << "\n";
     tmp_s = FollowTiling(tmp_s, target_stage_id, spatial_split_step_ids, level);
     const Iterator& target_iter =
         tmp_s->stages[target_stage_id]->iters[level * spatial_split_step_ids.size() - 1];
+    std::cout << "[RuleMultiLevelTilingWithFusion] target_iter " << target_iter->name << "\n";
+    std::cout << "[RuleMultiLevelTilingWithFusion] call compute_at\n";
     tmp_s.compute_at(stage_id, target_stage_id, target_iter);
     ret.emplace_back(std::move(tmp_s), stage_id - 1);
   }
@@ -186,6 +194,8 @@ SketchGenerationRule::ConditionKind RuleAddCacheRead::MeetCondition(const Sketch
 
 std::vector<std::pair<State, int>> RuleAddCacheRead::Apply(const SketchPolicyNode& policy,
                                                            const State& state, int stage_id) const {
+  std::cout << "[RuleAddCacheRead] Apply at stage " << stage_id << "\n";
+  
   const SearchTask& task = policy.search_task;
   const std::set<int>& consumers = GetConsumers(task, state, stage_id);
   State tmp_s = state;
@@ -201,6 +211,7 @@ std::vector<std::pair<State, int>> RuleAddCacheRead::Apply(const SketchPolicyNod
 
     const auto& share_read_pos =
         GetLastReduceIteratorInOutermostReduceTile(tmp_s->stages[target_stage_id]);
+    std::cout << "[RuleAddCacheRead] call compute_at\n";
     tmp_s.compute_at(added_stage_id, target_stage_id, share_read_pos);
   }
 
@@ -226,6 +237,8 @@ SketchGenerationRule::ConditionKind RuleAddCacheWrite::MeetCondition(const Sketc
 std::vector<std::pair<State, int>> RuleAddCacheWrite::Apply(const SketchPolicyNode& policy,
                                                             const State& state,
                                                             int stage_id) const {
+  std::cout << "[RuleAddCacheWrite] Apply at stage " << stage_id << "\n";
+  
   State tmp_s = state;
   tmp_s.cache_write(stage_id, "local", policy.search_task->compute_dag);
   return {std::make_pair(std::move(tmp_s), stage_id)};
@@ -243,6 +256,8 @@ SketchGenerationRule::ConditionKind RuleAddRfactor::MeetCondition(const SketchPo
 
 std::vector<std::pair<State, int>> RuleAddRfactor::Apply(const SketchPolicyNode& policy,
                                                          const State& state, int stage_id) const {
+  std::cout << "[RuleAddRfactor] Apply at stage " << stage_id << "\n";
+  
   // Fuse all reduction iters
   Array<Iterator> space_iters, reduce_iters;
   Iterator fused_reduce_iter;
@@ -292,6 +307,8 @@ SketchGenerationRule::ConditionKind RuleSimplifyComputeWithConstTensor::MeetCond
 
 std::vector<std::pair<State, int>> RuleSimplifyComputeWithConstTensor::Apply(
     const SketchPolicyNode& policy, const State& state, int stage_id) const {
+  std::cout << "[RuleSimplifyComputeWithConstTensor] Apply at stage " << stage_id << "\n";
+  
   std::set<std::string> const_tensor_indices = GetIterNameSetParam(
       state->stages[stage_id]->op->attrs, SearchPolicyKey::simplify_const_tensor_indices);
 
@@ -331,6 +348,7 @@ std::vector<std::pair<State, int>> RuleSimplifyComputeWithConstTensor::Apply(
 
 SketchGenerationRule::ConditionKind RuleCrossThreadReduction::MeetCondition(
     const SketchPolicyNode& policy, const State& state, int stage_id) const {
+  
   ICHECK(IsGPUTask(policy.search_task));
 
   // If it is an intermediate state created by RuleAddCacheWrite,
@@ -366,6 +384,8 @@ SketchGenerationRule::ConditionKind RuleCrossThreadReduction::MeetCondition(
 std::vector<std::pair<State, int>> RuleCrossThreadReduction::Apply(const SketchPolicyNode& policy,
                                                                    const State& state,
                                                                    int stage_id) const {
+  std::cout << "[RuleCrossThreadReduction] Apply at stage " << stage_id << "\n";
+  
   const SearchTask& task = policy.search_task;
   State tmp_s = state;
 
@@ -410,6 +430,7 @@ std::vector<std::pair<State, int>> RuleCrossThreadReduction::Apply(const SketchP
     const Iterator& target_iter = tmp_s->stages[target_stage_id]->iters[num_common_outer - 1];
     const auto& split_res = tmp_s.follow_split(stage_id, fused_reduce_iter, split_step_ids[0], 1);
     tmp_s.bind(stage_id, split_res[1], IteratorAnnotation::kThreadX);
+    std::cout << "[RuleCrossThreadReduction] call compute_at\n";
     tmp_s.compute_at(stage_id, target_stage_id, target_iter);
   } else {
     const auto& split_res =
@@ -443,6 +464,8 @@ SketchGenerationRule::ConditionKind RuleSpecialComputeLocationGPU::MeetCondition
 
 std::vector<std::pair<State, int>> RuleSpecialComputeLocationGPU::Apply(
     const SketchPolicyNode& policy, const State& state, int stage_id) const {
+  std::cout << "[RuleSpecialComputeLocationGPU] Apply at stage " << stage_id << "\n";
+  
   State tmp_s = state;
   const std::set<int>& consumers = GetConsumers(policy.search_task, state, stage_id);
   ICHECK_EQ(consumers.size(), 1);
@@ -452,7 +475,7 @@ std::vector<std::pair<State, int>> RuleSpecialComputeLocationGPU::Apply(
   for (size_t i = 0; i < target_stage->iters.size(); ++i) {
     if (target_stage->iters[i]->annotation == IteratorAnnotation::kUnroll) {
       ICHECK_GT(i, 0);
-
+      std::cout << "[RuleSpecialComputeLocationGPU] call compute_at\n";
       tmp_s.compute_at(stage_id, *consumers.begin(), target_stage->iters[i - 1]);
       break;
     }
@@ -537,6 +560,7 @@ PopulationGenerationRule::ResultKind InitChangeComputeLocation::Apply(
     } else {
       choice = choice - 2;
       const Stage& stage = (*state)->stages[candidates[choice].first];
+      std::cout << "[InitChangeComputeLocation] call compute_at\n";
       state->compute_at(stage_id, candidates[choice].first,
                         stage->iters[candidates[choice].second]);
     }
@@ -728,9 +752,14 @@ PopulationGenerationRule::ResultKind InitVectorization::Apply(SketchPolicyNode* 
 
 PopulationGenerationRule::ResultKind InitThreadBind::Apply(SketchPolicyNode* policy, State* state,
                                                            std::mt19937* rand_gen) const {
+  std::cout << "[InitThreadBind] start\n" << (*state)->PrintStep() << "\n";
+  std::cout << "[InitThreadBind]\n" << state->ToStr() << "\n";                                                         
   // Collect all stages that are roots of stages that perform multi-level tiling.
   std::set<int> multi_level_tiling_root_set;
   for (size_t stage_id = 0; stage_id < (*state)->stages.size(); ++stage_id) {
+    std::cout << "[InitThreadBind] stage_id: " << stage_id 
+              << " name: " << (*state)->stages[stage_id]->op->name.c_str()
+              << " compute_at: " << (int)(*state)->stages[stage_id]->compute_at << "\n";
     if (NeedsMultilevelTiling(policy->search_task, *state, stage_id)) {
       const Stage& stage = (*state)->stages[stage_id];
       if (stage->compute_at == ComputeAtKind::kInlined) {
@@ -740,6 +769,7 @@ PopulationGenerationRule::ResultKind InitThreadBind::Apply(SketchPolicyNode* pol
         // so it must be produced by RuleCrossThreadReduction.
         ICHECK(HasCrossThreadReduction(*state, stage_id));
       } else {
+        std::cout << "[InitThreadBind] insert: " << (int)stage->compute_at << "\n";
         const auto res = (*state)->attach_map->stage_to_attach_iter.find(stage_id);
         ICHECK(res != (*state)->attach_map->stage_to_attach_iter.end());
         multi_level_tiling_root_set.insert(res->second.first);
