@@ -264,10 +264,19 @@ void State::pragma(int stage_id, const Iterator& it, const String& pragma_type) 
 }
 
 void State::reorder(int stage_id, const Array<Iterator>& order) {
+  for (size_t i = 0; i < operator->()->stages.size(); i++) {
+    std::cout << "i: " << i << " stage " << operator->()->stages[i] << "\n";
+  }
   const Stage& stage = operator->()->stages[stage_id];
   ICHECK_EQ(order.size(), stage->iters.size()) << "The order of all iterators "
                                                << "should be specified";
   Array<Integer> after_ids;
+  std::cout << "target_cache_stage: " << stage 
+              << " iters: " << stage->iters << "\n";
+  for (size_t i = 0; i < stage->iters.size(); i++) {
+    std::cout << "[reorder] " << stage->iters[i]
+              << " " << order[i] << "\n";
+  }
   GetIndices(stage->iters, order, &after_ids);
   ReorderStep step = ReorderStep(stage_id, after_ids);
   CopyOnWrite()->transform_steps.push_back(step);
@@ -312,6 +321,7 @@ void State::storage_align(int stage_id, const Iterator& it, int factor, int offs
 
 void State::compute_at(int stage_id, int target_stage_id, const Iterator& target_iter) {
   const Stage& target_stage = operator->()->stages[target_stage_id];
+  std::cout << "[State::compute_at] target_stage " << target_stage->op->name << "\n";
   ComputeAtStep step =
       ComputeAtStep(stage_id, target_stage_id, GetIndex(target_stage->iters, target_iter));
   CopyOnWrite()->transform_steps.push_back(step);

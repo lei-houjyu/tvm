@@ -405,6 +405,67 @@ inline bool HasCacheReadStage(const State& s, int stage_id) {
   return false;
 }
 
+inline std::vector<int> GetCacheReadStages(const State& s) {
+  std::vector<int> res;
+  for (int i = 0; i < s->stages.size(); i++) {
+    if (StrEndsWith(s->stages[i]->op->name, ".shared")) {
+      res.push_back(i);
+      std::cout << "[GetCacheReadStages] stage_id " << i << "\n";
+    }
+  }
+  return res;
+}
+
+inline int GetIteratorIdxByName(const Stage& stage, std::string name) {
+  for (size_t i = 0; i < stage->iters.size(); i++) {
+    if (stage->iters[i]->name.compare(name) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+inline int GetTargetCacheStageId(const State& state, int target_stage_id) {
+  std::string target_stage_name = state->stages[target_stage_id]->op->name;
+  for (size_t i = 0; i < state->stages.size(); i++) {
+    std::string name = state->stages[i]->op->name;
+    if (name.compare(target_stage_name + ".local") == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+inline std::vector<int> GetReadCacheStages(const State& state) {
+  std::vector<int> res;
+  for (size_t i = 0; i < state->stages.size(); i++) {
+    if (StrEndsWith(state->stages[i]->op->name, ".shared")) {
+      res.push_back(i);
+    }
+  }
+  return res;
+}
+
+inline std::vector<int> GetWriteCacheStages(const State& state) {
+  std::vector<int> res;
+  for (size_t i = 0; i < state->stages.size(); i++) {
+    if (StrEndsWith(state->stages[i]->op->name, ".local")) {
+      res.push_back(i);
+    }
+  }
+  return res;
+}
+
+inline std::vector<Iterator> GetIteratorsByKind(const Stage& stage, IteratorKind kind) {
+  std::vector<Iterator> res;
+  for (size_t i = 0; i < stage->iters.size(); i++) {
+    if (stage->iters[i]->iter_kind == kind) {
+      res.push_back(stage->iters[i]);
+    }
+  }
+  return res;
+}
+
 /*! \brief Return whether the state does cache_write for stage_id. */
 inline bool HasCacheWriteStage(const State& s, int stage_id) {
   for (int i = static_cast<int>(s->transform_steps.size()) - 1; i >= 0; --i) {

@@ -54,8 +54,9 @@ TilePolicy::TilePolicy(SearchTask task,
 }
 
 void TilePolicyNode::ParseTilingSizes() {
-  int target_stage_id = get_target_stage_id();
-  Stage target = search_task->compute_dag->init_state->stages[target_stage_id];
+  State init_state = search_task->compute_dag->init_state;
+  int target_stage_id = get_target_stage_id(init_state);
+  Stage target = init_state->stages[target_stage_id];
 
   std::string tile_str = GetStringParam(params, TileParamKey::tiling_size);
   std::cout << "tiling_size: " << tile_str << "\n";
@@ -65,34 +66,37 @@ void TilePolicyNode::ParseTilingSizes() {
 
   size_t pre = 0, next = tile_str.find(";");
   while (next != std::string::npos) {
+    // segment: split info of an iterator, e.g., i@16,8
     std::string segment = tile_str.substr(pre, next - pre);
     if (segment[segment.length() - 1] != ',') {
       segment += ',';
     }
 
+    // get the iterator name
     size_t pos_l = 0, pos_r = segment.find("@");
     std::string iter_name = segment.substr(pos_l, pos_r - pos_l);
-    int iter_id = get_iter_id(target, iter_name);
-    tile_size[iter_id] = Array<Optional<Integer>>();
+    tile_size[iter_name] = Array<Optional<Integer>>();
 
+    // get split factors
     pos_l = pos_r + 1;
     pos_r = segment.find(",");
     while (pos_r != std::string::npos) {
       int size = std::stoi(segment.substr(pos_l, pos_r - pos_l));
-      tile_size[iter_id].push_back(Integer(size));
+      tile_size[iter_name].push_back(Integer(size));
       pos_l = pos_r + 1;
       pos_r = segment.find(",", pos_l);
-    }    
+    }
 
     pre = next + 1;
     next = tile_str.find(";", pre);
   }
 }
 
-int TilePolicyNode::get_target_stage_id() {
-  Array<Stage> stages = search_task->compute_dag->init_state->stages;
+int TilePolicyNode::get_target_stage_id(State state) {
+  Array<Stage> stages = state->stages;
   for (int i = 0; i < stages.size(); i++) {
     if (stages[i]->op_type == StageKind::kCompute) {
+      std::cout << "get_target_stage_id: " << i << "\n";
       return i;
     }
   }
@@ -108,7 +112,8 @@ int TilePolicyNode::get_iter_id(Stage stage, std::string iter_name) {
   return -1;
 }
 
-void TilePolicyNode::print_stages(State state) const {
+void TilePolicyNode::print_stages(std::string line, State state) const {
+  std::cout << "-------" << line << "-------\n";
   printf("state has %ld stages\n", state->stages.size());
   Array<Stage> stages = state->stages;
   for (size_t i = 0; i < stages.size(); i++) {
@@ -117,14 +122,26 @@ void TilePolicyNode::print_stages(State state) const {
             i, cur_stage->op->name.c_str(), (int)cur_stage->compute_at);
     for (size_t j = 0; j < cur_stage->iters.size(); j++) {
       Iterator cur_iter = cur_stage->iters[j];
-      printf("iterator %ld, name: %s\n", j, cur_iter->name.c_str());
+      printf("iterator %ld, name: %s kind: %d\n", j, cur_iter->name.c_str(), (int)cur_iter->iter_kind);
     }
   }
+}
+
+size_t TilePolicyNode::get_thread_iter(State state, int stage_id) const {  
+  Array<Iterator> iters = state->stages[stage_id]->iters;
+  for (size_t i = 0; i < iters.size(); i++) {
+    std::cout << "stage: " << stage_id << " i: " << i << " annotation: " << (int)iters[i]->annotation << "\n";
+    if (iters[i]->annotation == IteratorAnnotation::kThreadX) {
+      return i;
+    }
+  }
+  return 0;
 }
 
 State TilePolicyNode::Search(int num_measure_trials, int early_stopping,
                               int num_measures_per_round, ProgramMeasurer measurer) {
     State init_state = search_task->compute_dag->init_state;
+    int target_stage_id = get_target_stage_id(init_state);
     measurer->Reset();
     Array<MeasureInput> inputs;
     Array<MeasureResult> results;
@@ -132,23 +149,61 @@ State TilePolicyNode::Search(int num_measure_trials, int early_stopping,
     // 1. Get tiling sizes
     ParseTilingSizes();
 
-    // 2. Split axises
-    int target_stage_id = get_target_stage_id();
+    // Add read cache stages (shared memory)
+    if (need_smem_tiling) {
+      print_stages("add read cache", init_state);
+
+      const std::set<int>& producers = GetProducers(search_task, init_state, target_stage_id);
+      int stage_offset = 0;
+      for (int producer : producers) {
+        init_state.cache_read(producer + stage_offset, "shared", {target_stage_id}, search_task->compute_dag);
+        stage_offset++;
+        target_stage_id++;
+      }
+    } else {
+      std::cout << "-------No Shared Memory Tiling-------\n";
+    }
+
+    // Add write cache stages (register)
+    if (need_reg_tiling) {
+      print_stages("add write cache", init_state);
+
+      std::vector<int> read_cache_stages = GetCacheReadStages(init_state);
+      read_cache_stages.push_back(target_stage_id);
+      int stage_offset = 0;
+      for (int i = 0; i < read_cache_stages.size(); i++) {
+        std::cout << "calling cache_write i: " << read_cache_stages[i] << " offset: " << stage_offset << "\n";
+        init_state.cache_write(read_cache_stages[i] + stage_offset, "local", search_task->compute_dag);
+        std::cout << "cache_write finished\n";
+        stage_offset++;
+        target_stage_id++;
+        print_stages(std::to_string(i), init_state);
+      }
+      
+      // int added_stage_id = target_stage_id++; // added before the target stage
+      // print_stages(init_state);
+      // size_t thrd_iter_idx = get_thread_iter(init_state, target_stage_id);
+      // std::cout << "thrd_iter_idx " << thrd_iter_idx << "\n";
+      // init_state.compute_at(added_stage_id, target_stage_id, init_state->stages[target_stage_id]->iters[thrd_iter_idx]);
+    } else {
+      std::cout << "-------No Register Tiling-------";
+    }
+
+    // Split axises (spatial only)
     Stage target_stage = init_state->stages[target_stage_id];
-    for (auto it : tile_size) {
-      int iter_id = it.first;
-      Array<Optional<Integer>> lengths = it.second;
-      Iterator iter = target_stage->iters[it.first];
-      bool inner_to_outer = true;
-      init_state.split(target_stage_id, iter, lengths);
+    for (auto it : target_stage->iters) {
+      if (it->iter_kind == IteratorKind::kSpatial) {
+        init_state.split(target_stage_id, it, tile_size[it->name]);
+      }
     }
     std::cout << "[2. Split]\n" << init_state.ToStr() << "\n";
 
-    // 3. Reorder axis according to the memory layers
-    print_stages(init_state);
-    target_stage_id = get_target_stage_id();
+    // Reorder axis according to the memory layers
+    print_stages("reoder axes", init_state);
     target_stage = init_state->stages[target_stage_id];
     Array<Iterator> block_axis, thread_axis, space_axis, reduce_axis, after;
+    std::cout << "target_cache_stage: " << target_stage 
+              << " iters: " << target_stage->iters << "\n";
     for (int i = 0; i < target_stage->iters.size(); i++) {
       Iterator it = target_stage->iters[i];
       if (it->iter_kind == IteratorKind::kSpatial) {
@@ -174,38 +229,78 @@ State TilePolicyNode::Search(int num_measure_trials, int early_stopping,
 
     for (int i = 0; i < block_axis.size(); i++)  after.push_back(block_axis[i]);
     for (int i = 0; i < thread_axis.size(); i++) after.push_back(thread_axis[i]);
-    for (int i = 0; i < reduce_axis.size(); i++) after.push_back(reduce_axis[i]);
     for (int i = 0; i < space_axis.size(); i++)  after.push_back(space_axis[i]);
+    for (int i = 0; i < reduce_axis.size(); i++) after.push_back(reduce_axis[i]);
 
     init_state.reorder(target_stage_id, after);
     std::cout << "[3. Reorder]\n" << init_state.ToStr() << "\n";
 
-    // 4. Fuse and bind axises to threads and blocks
-    print_stages(init_state);
+    // Fuse and bind axises to threads and blocks
+    print_stages("fuse axes", init_state);
     Iterator bx = init_state.fuse(target_stage_id, block_axis);
     Iterator tx = init_state.fuse(target_stage_id, thread_axis);
-    print_stages(init_state);
-    target_stage_id = get_target_stage_id();
+    print_stages("bind axes", init_state);
     target_stage = init_state->stages[target_stage_id];
-    init_state.bind(target_stage_id, bx, IteratorAnnotation::kBlockX);
-    init_state.bind(target_stage_id, tx, IteratorAnnotation::kThreadX);
+    Iterator new_bx = init_state.bind(target_stage_id, bx, IteratorAnnotation::kBlockX);
+    Iterator new_tx = init_state.bind(target_stage_id, tx, IteratorAnnotation::kThreadX);
     std::cout << "[4.Fuse]\n" << init_state.ToStr() << "\n";
+    
+    // Step
+    int target_cache_stage_id = GetTargetCacheStageId(init_state, target_stage_id);
+    if (target_cache_stage_id != -1) {
+      init_state.compute_at(target_cache_stage_id, target_stage_id, new_tx);
+      Stage target_cache_stage = init_state->stages[target_cache_stage_id];
 
-    // 5. Add read cache stages (shared memory)
-    print_stages(init_state);
-    RuleAddCacheRead rule;
-    const std::set<int>& producers = GetProducers(search_task, init_state, target_stage_id);
-    int stage_offset = 0;
-    for (int producer : producers) {
-      auto res = rule.Apply(*this, init_state, producer + stage_offset);
-      stage_offset++;
-      init_state = res[0].first;
+      after.clear();
+      // for (auto it : target_cache_stage->iters) {
+      //   if (it->iter_kind == IteratorKind::kReduction) {
+      //     init_state.split(target_cache_stage_id, it, tile_size[it->name]);
+      //   }
+      // }
+
+      // target_cache_stage = init_state->stages[target_cache_stage_id];
+      reduce_axis = GetIteratorsByKind(target_cache_stage, IteratorKind::kReduction);
+      space_axis = GetIteratorsByKind(target_cache_stage, IteratorKind::kSpatial);
+      for (size_t i = 0; i < reduce_axis.size(); i++) after.push_back(reduce_axis[i]);
+      for (size_t i = 0; i < space_axis.size(); i++) after.push_back(space_axis[i]);
+      
+      init_state.reorder(target_cache_stage_id, after);
+      print_stages("Step", init_state);
+      std::cout << "[Step]\n" << init_state.ToStr() << "\n";
     }
 
-    // 6. Add write cache stages (register)
+    // Cooperative fetching
+    for (int read_cache_stage_id : GetReadCacheStages(init_state)) {
+      if (target_cache_stage_id != -1) {
+        Iterator outer_reduce_iter = init_state->stages[target_cache_stage_id]->iters[0];
+        init_state.compute_at(read_cache_stage_id, target_cache_stage_id, outer_reduce_iter);
+      } else {
+        init_state.compute_at(read_cache_stage_id, target_stage_id, new_tx);
+      }
+      // Stage read_cache_stage = init_state->stages[read_cache_stage_id];
+      // for (auto it : target_stage->iters) {
+      //   if (it->iter_kind == IteratorKind::kSpatial) {
+      //     init_state.split(read_cache_stage_id, it, tile_size[it->name][1]);
+      //   }
+      // }
+    }
 
+    // Register tile
+    for (int write_cache_stage_id : GetWriteCacheStages(init_state)) {
+      if (write_cache_stage_id != target_cache_stage_id) {
+        Stage target_cache_stage = init_state->stages[target_cache_stage_id];
+        int idx = 0;
+        while (target_cache_stage->iters[idx]->iter_kind == IteratorKind::kReduction) {
+          idx++;
+        }
+        Iterator inner_reduce_iter = target_cache_stage->iters[idx - 1];
+        init_state.compute_at(write_cache_stage_id, target_cache_stage_id, inner_reduce_iter);
+      }
+    }
+    print_stages("Register tile", init_state);
+    std::cout << "[Register tile]\n" << init_state.ToStr() << "\n";
 
-    // 7. Measure
+    // Measure
     inputs.push_back(MeasureInput(search_task, init_state));
     results = measurer->Measure(search_task, GetRef<SearchPolicy>(this), inputs);
 

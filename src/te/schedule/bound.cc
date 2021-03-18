@@ -89,6 +89,7 @@ StorageScope InferStorageScope(const Stage& stage, const GraphContext& ctx) {
 
 void InferRootBound(const Stage& stage, const GraphContext& ctx,
                     std::unordered_map<IterVar, Range>* rmap) {
+  std::cout << "[InferRootBound] " << stage->op->name << "\n";
   ICHECK_NE(stage->attach_type, kInline) << "call schedule.normalize before scheduleops";
   if (stage->attach_type == kInlinedAlready) return;
   if (stage->is_output) {
@@ -173,7 +174,7 @@ void InferRootBound(const Stage& stage, const GraphContext& ctx,
       }
     }
     ICHECK(found_attach || stage_attach.size() == 0)
-        << "Invalid Schedule, cannot find the producer " << stage->op
+        << "Invalid Schedule, cannot find the producer " << stage->op->name
         << " along the loop nest specified by compute_at of consumer " << op;
     // Get the domain of the consumer
     PassUpDomain(op_stage, *rmap, &up_state);

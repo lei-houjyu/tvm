@@ -202,6 +202,7 @@ std::vector<std::pair<State, int>> RuleAddCacheRead::Apply(const TilePolicyNode&
 
     const auto& share_read_pos =
         GetLastReduceIteratorInOutermostReduceTile(tmp_s->stages[target_stage_id]);
+    std::cout << "[RuleAddCacheRead::Apply] added_stage_id " << added_stage_id << " target_stage_id " << target_stage_id << " share_read_pos " << share_read_pos->name << "\n"; 
     tmp_s.compute_at(added_stage_id, target_stage_id, share_read_pos);
   }
 

@@ -99,11 +99,13 @@ class TilePolicyNode : public SearchPolicyNode {
 
   void ParseTilingSizes();
 
-  void print_stages(State state) const;
+  void print_stages(std::string line, State state) const;
 
-  int get_target_stage_id();
+  int get_target_stage_id(State state);
 
   int get_iter_id(Stage stage, std::string iter_name);
+
+  size_t get_thread_iter(State state, int stage_id) const;
   
   State Search(int num_measure_trials, int early_stopping, int num_measures_per_round,
                ProgramMeasurer measurer) final;
@@ -121,7 +123,11 @@ class TilePolicyNode : public SearchPolicyNode {
    */
   Array<State> SearchOneRound();
 
-  std::map<int, Array<Optional<Integer>>> tile_size;
+  std::map<std::string, Array<Optional<Integer>>> tile_size;
+
+  bool need_smem_tiling = true;
+
+  bool need_reg_tiling = true;
 };
 
 /*!
